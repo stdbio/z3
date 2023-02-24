@@ -28,6 +28,6 @@ z3_add_component(transforms
     dl_mk_synchronize.cpp
   COMPONENT_DEPENDENCIES
     dataflow
-    hilbert
+    z3_hilbert
     muz
 )
