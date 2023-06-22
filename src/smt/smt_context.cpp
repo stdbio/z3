@@ -2918,7 +2918,9 @@ namespace smt {
     bool context::has_split_candidate(bool_var& var, bool& is_pos) {
         if (!m_user_propagator)
             return false;
-        return m_user_propagator->get_case_split(var, is_pos);
+        if (!m_user_propagator->get_case_split(var, is_pos))
+            return false;
+        return get_assignment(var) == l_undef;
     }
     
     bool context::decide_user_interference(bool_var& var, bool& is_pos) {
@@ -3024,7 +3026,8 @@ namespace smt {
         SASSERT(is_well_sorted(m, e));
         TRACE("begin_assert_expr", tout << mk_pp(e, m) << " " << mk_pp(pr, m) << "\n";);
         TRACE("begin_assert_expr_ll", tout << mk_ll_pp(e, m) << "\n";);
-        pop_to_base_lvl();
+        if (!m_searching)
+            pop_to_base_lvl();
         if (pr == nullptr)
             m_asserted_formulas.assert_expr(e);
         else
@@ -3334,6 +3337,7 @@ namespace smt {
         reset_assumptions();
         m_literal2assumption.reset();
         m_unsat_core.reset();
+
         if (!asms.empty()) {
             // We must give a chance to the theories to propagate before we create a new scope...
             propagate();
@@ -3343,6 +3347,7 @@ namespace smt {
                 return;
             if (get_cancel_flag())
                 return;
+            del_inactive_lemmas();
             push_scope();
             vector<std::pair<expr*,expr_ref>> asm2proxy;
             internalize_proxies(asms, asm2proxy);

@@ -20,6 +20,7 @@ Revision History:
 
 #include "ast/ast.h"
 #include "ast/rewriter/rewriter.h"
+#include "ast/rewriter/rewriter_def.h"
 #include "params/pattern_inference_params.h"
 #include "util/vector.h"
 #include "util/uint_set.h"
@@ -69,6 +70,7 @@ class pattern_inference_cfg :  public default_rewriter_cfg {
     expr * const *             m_no_patterns;
     bool                       m_nested_arith_only;
     bool                       m_block_loop_patterns;
+    bool                       m_decompose_patterns;
 
     struct info {
         uint_set m_free_vars;
@@ -187,6 +189,9 @@ class pattern_inference_cfg :  public default_rewriter_cfg {
 
     ptr_vector<pre_pattern>      m_pre_patterns;
     expr_pattern_match           m_database;
+
+    ptr_buffer<app> m_args;
+    app* mk_pattern(app* candidate);
 
     void candidates2unary_patterns(ptr_vector<app> const & candidate_patterns,
                                    ptr_vector<app> & remaining_candidate_patterns,

@@ -361,7 +361,7 @@ void cmd_context::insert_macro(symbol const& s, unsigned arity, sort*const* doma
         vars.push_back(m().mk_var(i, domain[i]));
         rvars.push_back(m().mk_var(i, domain[arity - i - 1]));
     }
-    recfun::promise_def d = p.ensure_def(s, arity, domain, t->get_sort());
+    recfun::promise_def d = p.ensure_def(s, arity, domain, t->get_sort(), false);
 
     // recursive functions have opposite calling convention from macros!
     var_subst sub(m(), true);
@@ -508,8 +508,12 @@ public:
             m_owner.m_func_decls.contains(s);
     }
     format_ns::format * pp_sort(sort * s) override {
-        return m_owner.pp(s);
+        auto * f = m_owner.try_pp(s);
+        if (f)
+            return f;
+        return smt2_pp_environment::pp_sort(s);
     }
+
     format_ns::format * pp_fdecl(func_decl * f, unsigned & len) override {
         symbol s = f->get_name();
         func_decls fs;
@@ -984,7 +988,7 @@ recfun::decl::plugin& cmd_context::get_recfun_plugin() {
 
 recfun::promise_def cmd_context::decl_rec_fun(const symbol &name, unsigned int arity, sort *const *domain, sort *range) {        
     SASSERT(logic_has_recfun());
-    return get_recfun_plugin().mk_def(name, arity, domain, range);
+    return get_recfun_plugin().mk_def(name, arity, domain, range, false);
 }
 
 void cmd_context::insert_rec_fun(func_decl* f, expr_ref_vector const& binding, svector<symbol> const& ids, expr* rhs) {
@@ -1237,7 +1241,10 @@ bool cmd_context::try_mk_pdecl_app(symbol const & s, unsigned num_args, expr * c
     if (num_args != 1)
         return false;
 
-    for (auto* a : dt.plugin().get_accessors(s)) {        
+    if (!dt.is_datatype(args[0]->get_sort()))
+        return false;
+
+    for (auto* a : dt.plugin().get_accessors(s)) {     
         fn = a->instantiate(args[0]->get_sort());
         r = m().mk_app(fn, num_args, args);
         return true;
@@ -1387,14 +1394,13 @@ void cmd_context::reset_macros() {
 }
 
 void cmd_context::reset_cmds() {
-    for (auto& kv : m_cmds) {
-        kv.m_value->reset(*this);
+    for (auto& [k,v] : m_cmds) {
+        v->reset(*this);
     }
 }
 
 void cmd_context::finalize_cmds() {
-    for (auto& kv : m_cmds) {
-        cmd * c = kv.m_value;
+    for (auto& [k,c] : m_cmds) {
         c->finalize(*this);
         dealloc(c);
     }
@@ -1426,6 +1432,7 @@ void cmd_context::reset(bool finalize) {
     m_builtin_decls.reset();
     m_extra_builtin_decls.reset();
     m_check_logic.reset();
+    m_proof_cmds = nullptr;
     reset_object_refs();
     reset_cmds();
     reset_psort_decls();
@@ -1979,23 +1986,28 @@ void cmd_context::complete_model(model_ref& md) const {
         }
     }
 
-    for (auto kd : m_func_decls) {
-        symbol const & k = kd.m_key;
-        func_decls & v = kd.m_value;
+    for (auto& [k, v] : m_func_decls) {
         IF_VERBOSE(12, verbose_stream() << "(model.completion " << k << ")\n"; );
         for (unsigned i = 0; i < v.get_num_entries(); i++) {
             func_decl * f = v.get_entry(i);
-            if (!md->has_interpretation(f)) {
-                sort * range = f->get_range();
-                expr * some_val = m().get_some_value(range);
-                if (f->get_arity() > 0) {
-                    func_interp * fi = alloc(func_interp, m(), f->get_arity());
-                    fi->set_else(some_val);
-                    md->register_decl(f, fi);
-                }
-                else
-                    md->register_decl(f, some_val);
+            
+            if (md->has_interpretation(f))
+                continue;
+            macro_decls decls;
+            expr* body = nullptr;
+                
+            if (m_macros.find(k, decls)) 
+                body = decls.find(f->get_arity(), f->get_domain());
+            sort * range = f->get_range();
+            if (!body)
+                body = m().get_some_value(range);
+            if (f->get_arity() > 0) {
+                func_interp * fi = alloc(func_interp, m(), f->get_arity());
+                fi->set_else(body);
+                md->register_decl(f, fi);
             }
+            else
+                md->register_decl(f, body);
         }
     }
 }
@@ -2253,8 +2265,12 @@ bool cmd_context::is_model_available(model_ref& md) const {
 }
 
 format_ns::format * cmd_context::pp(sort * s) const {
+    return get_pp_env().pp_sort(s);
+}
+
+format_ns::format* cmd_context::try_pp(sort* s) const {
     TRACE("cmd_context", tout << "pp(sort * s), s: " << mk_pp(s, m()) << "\n";);
-    return pm().pp(s);
+    return pm().pp(get_pp_env(), s);
 }
 
 cmd_context::pp_env & cmd_context::get_pp_env() const {

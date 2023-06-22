@@ -19,9 +19,6 @@ Author:
 #include "util/obj_pair_set.h"
 #include "ast/ast_trail.h"
 #include "ast/arith_decl_plugin.h"
-#include "math/lp/lp_solver.h"
-#include "math/lp/lp_primal_simplex.h"
-#include "math/lp/lp_dual_simplex.h"
 #include "math/lp/indexed_value.h"
 #include "math/lp/lar_solver.h"
 #include "math/lp/nla_solver.h"
@@ -119,11 +116,10 @@ namespace arith {
         sat::ddfw::clause_info& get_clause_info(unsigned idx) { return m_bool_search->get_clause_info(idx); }
         sat::ddfw::clause_info const& get_clause_info(unsigned idx) const { return m_bool_search->get_clause_info(idx); }
         bool is_true(sat::literal lit) { return lit.sign() != m_bool_search->get_value(lit.var()); }
+        bool sign(sat::bool_var v) const { return !m_bool_search->get_value(v); }
 
         void reset();
         ineq* atom(sat::bool_var bv) const { return m_bool_vars[bv]; }
-
-        void log();
 
         bool flip(bool sign, ineq const& ineq);
         int64_t dtt(bool sign, ineq const& ineq) const { return dtt(sign, ineq.m_args_value, ineq); }
@@ -150,6 +146,10 @@ namespace arith {
 
         int64_t value(var_t v) const { return m_vars[v].m_value; }
         int64_t to_numeral(rational const& r);
+
+        void check_ineqs();
+
+        std::ostream& display(std::ostream& out) const;
 
     public:
         sls(solver& s);

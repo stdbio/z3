@@ -23,7 +23,7 @@ Author:
 #include "ast/ast_ll_pp.h"
 
 hoist_rewriter::hoist_rewriter(ast_manager & m, params_ref const & p):
-    m(m), m_args1(m), m_args2(m), m_subst(m) { 
+    m(m), m_args1(m), m_args2(m), m_refs(m), m_subst(m) { 
     updt_params(p); 
 }
 
@@ -37,7 +37,7 @@ expr_ref hoist_rewriter::mk_and(expr_ref_vector const& args) {
                 continue;
             else
                 negs.push_back(::mk_not(m, a));
-        return expr_ref(::mk_not(m, mk_or(negs)), m);
+        return ::mk_not(mk_or(negs));
     }
     else
         return ::mk_and(args);
@@ -164,7 +164,6 @@ unsigned hoist_rewriter::mk_var(expr* e) {
 }
 
 expr_ref hoist_rewriter::hoist_predicates(obj_hashtable<expr> const& preds, unsigned num_args, expr* const* es) {
-    expr_ref result(m);
     expr_ref_vector args(m), args1(m), fmls(m);
     for (unsigned i = 0; i < num_args; ++i) {
         VERIFY(is_and(es[i], &args1));
@@ -178,14 +177,13 @@ expr_ref hoist_rewriter::hoist_predicates(obj_hashtable<expr> const& preds, unsi
     fmls.push_back(mk_or(args));
     for (auto* p : preds) 
         fmls.push_back(p);
-    result = mk_and(fmls);
-    return result;
+    return mk_and(fmls);
 }
 
 
 br_status hoist_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result) {
     switch (f->get_decl_kind()) {
-    case OP_OR:
+    case OP_OR:        
         return mk_or(num_args, args, result);
     default:
         return BR_FAILED;
@@ -193,6 +191,33 @@ br_status hoist_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * c
 }
 
 bool hoist_rewriter::is_and(expr * e, expr_ref_vector* args) {
+#if 0
+    if (!args) 
+        return m.is_and(e) || (m.is_not(e, e) && m.is_or(e));
+    expr_fast_mark1 visited;
+    args->reset();
+    args->push_back(e);
+    m_refs.reset();
+    for (unsigned i = 0; i < args->size(); ++i) {
+        e = args->get(i);
+        if (visited.is_marked(e)) 
+            goto drop;
+        m_refs.push_back(e);
+        visited.mark(e, true);
+        if (m.is_and(e)) 
+            args->append(to_app(e)->get_num_args(), to_app(e)->get_args());
+        else if (m.is_not(e, e) && m.is_or(e)) 
+            for (expr* arg : *to_app(e)) 
+                args->push_back(::mk_not(m, arg));
+        else 
+            continue;
+    drop:
+        (*args)[i] = args->back();
+        args->pop_back();
+        --i;
+    }
+    return args->size() > 1;
+#else
     if (m.is_and(e)) {
         if (args) {
             args->reset();
@@ -209,6 +234,7 @@ bool hoist_rewriter::is_and(expr * e, expr_ref_vector* args) {
         }
         return true;
     }
+#endif
     return false;
 }
 

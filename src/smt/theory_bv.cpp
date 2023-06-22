@@ -811,6 +811,7 @@ namespace smt {
         init_bits(e, bits);                                                                
     }
 
+    MK_UNARY(internalize_neg,       mk_neg);
     MK_UNARY(internalize_not,       mk_not);
     MK_UNARY(internalize_redand,    mk_redand);
     MK_UNARY(internalize_redor,     mk_redor);
@@ -895,6 +896,7 @@ namespace smt {
         }
         switch (term->get_decl_kind()) {
         case OP_BV_NUM:         internalize_num(term); return true;
+        case OP_BNEG:           internalize_neg(term); return true;
         case OP_BADD:           internalize_add(term); return true;
         case OP_BSUB:           internalize_sub(term); return true;
         case OP_BMUL:           internalize_mul(term); return true;
@@ -944,6 +946,9 @@ namespace smt {
                 internalize_bv2int(term); 
             }
             return params().m_bv_enable_int2bv2int;
+        case OP_BSREM:        return false;
+        case OP_BUREM:        return false;
+        case OP_BSMOD:        return false;
         default:
             TRACE("bv_op", tout << "unsupported operator: " << mk_ll_pp(term, m) << "\n";);
             UNREACHABLE();
@@ -1884,21 +1889,14 @@ namespace smt {
         return var_enode_pos(nullptr, UINT32_MAX);
     }
 
-    bool_var theory_bv::get_first_unassigned(unsigned start_bit, enode* n) const {
+    bool_var theory_bv::get_bit(unsigned bit, enode* n) const {
         theory_var v = n->get_th_var(get_family_id());
+        if (v == null_theory_var)
+            return null_bool_var;
         auto& bits = m_bits[v];
-        unsigned sz = bits.size();
-
-        for (unsigned i = start_bit; i < sz; ++i) {
-            if (ctx.get_assignment(bits[i].var()) == l_undef)
-                return bits[i].var();
-        }
-        for (unsigned i = 0; i < start_bit; ++i) {
-            if (ctx.get_assignment(bits[i].var()) == l_undef)
-                return bits[i].var();
-        }
-
-        return null_bool_var;
+        if (bit >= bits.size())
+            return null_bool_var;
+        return bits[bit].var();
     }
 
     bool theory_bv::check_assignment(theory_var v) {
